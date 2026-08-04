@@ -1568,7 +1568,7 @@ async function handleMessages(sock, messageUpdate) {
     const heavyCmds = ['video','play','song','ytmp3','ytmp4','img','imagine','sticker','gpt','ai','sora','lyrics','removebg','remini','blur']
     const isHeavy   = heavyCmds.includes(cmd)
 
-const runCmd = () => processCommand(sock, message, cmd, args, fullArgs, chatId, senderId, isOwner, isMod, isAdmin, botNum, modePublic, isGroup, mentioned, quotedSender, quotedMsg, userMessage, rawText, settings, commandContext?.meta)
+    const runCmd = () => processCommand(sock, message, cmd, args, fullArgs, chatId, senderId, isOwner, isMod, isAdmin, botNum, modePublic, isGroup, mentioned, quotedSender, quotedMsg, userMessage, rawText, settings, commandContext?.meta)
 
     try {
         const _cmdLabel = `cmd:${cmd}:${cleanJid(senderId)}`
@@ -1582,14 +1582,19 @@ const runCmd = () => processCommand(sock, message, cmd, args, fullArgs, chatId, 
             if (process.env.DEBUG_COMMANDS === '1') {
                 console.log('[cmd] heavy command queue run', { senderId, cmd, runCmdType: typeof runCmd })
             }
-            await queue.run(senderId, async () => {
+            sendLoadingReaction().catch(() => {})
+            queue.run(senderId, async () => {
                 if (debugTime) console.time(_cmdLabel)
                 try { return await runCmd() } finally { if (debugTime) console.timeEnd(_cmdLabel) }
+            }).catch((err) => {
+                console.error(`[cmd] heavy command failed for .${cmd}:`, err?.message || err)
+                sendStyledMessage(sock, chatId, '⚠️ Command failed. Please try again in a moment.', { quoted: message }, settings).catch(() => {})
             })
-        } else {
-            if (debugTime) console.time(_cmdLabel)
-            try { await runCmd() } finally { if (debugTime) console.timeEnd(_cmdLabel) }
+            return
         }
+
+        if (debugTime) console.time(_cmdLabel)
+        try { await runCmd() } finally { if (debugTime) console.timeEnd(_cmdLabel) }
     } catch (e) {
         console.error(`[cmd] command execution failed for .${cmd}:`, e?.message || e)
         if (e?.stack) console.error(e.stack)
