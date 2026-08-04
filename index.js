@@ -462,6 +462,7 @@ async function startBotSession(phoneNumber, isReconnect = false) {
                 if (!mek?.message) return
                 mek.message = Object.keys(mek.message)[0] === 'ephemeralMessage'
                     ? mek.message.ephemeralMessage.message : mek.message
+                if (mek.key?.fromMe) return
                 
                 // Handle status updates with AutoViewStatus
                 if (mek.key?.remoteJid === 'status@broadcast') {

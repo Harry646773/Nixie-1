@@ -1135,7 +1135,10 @@ async function handleMessages(sock, messageUpdate) {
 
     const message = messages[0]  
     if (!message?.message) return  
-    
+    if (message.key?.fromMe) return
+
+    const handlerStartedAt = Date.now()
+
     // ★ METRIC: Record message processing
     recordMetric('messagesProcessed')
     
@@ -1220,6 +1223,16 @@ async function handleMessages(sock, messageUpdate) {
     const ownerNumberClean = cleanJid(settings.ownerNumber).split('@')[0]
     const ownerNumbers = Array.isArray(settings.owners) ? settings.owners : [settings.owners].filter(Boolean)
     const isOwner = isConnected || ownerNumbers.some(o => cleanJid(o).split('@')[0] === senderNum) || ownerNumberClean === senderNum
+    const modePublic = settings.isPublic !== false
+    const shouldCheckAdmin = isGroup && (
+        !modePublic ||
+        settings.antilink?.enabled ||
+        settings.antibadword?.enabled ||
+        settings.antispam?.enabled ||
+        settings.antisticker?.enabled ||
+        settings.isChatbotOn
+    )
+    const adminInfoPromise = shouldCheckAdmin ? checkAdmin(sock, chatId, senderId) : Promise.resolve({ isBotAdmin: false, isSenderAdmin: false })
 
     // ── AUTO-ADD NEW PRIVATE CONTACTS ─────────────────────
     try {
@@ -1271,11 +1284,10 @@ async function handleMessages(sock, messageUpdate) {
     const roleInfo = await Permission.checkRole(senderId, isGroup ? chatId : null)
     const isMod = roleInfo.isModerator
     const isAdmin = roleInfo.isAdmin
-    const modePublic = settings.isPublic !== false
 
     let isSenderAdmin = false
     if (isGroup && !modePublic) {
-        const adminInfo = await checkAdmin(sock, chatId, senderId)
+        const adminInfo = await adminInfoPromise
         isSenderAdmin = adminInfo.isSenderAdmin
     }
 
@@ -1299,7 +1311,7 @@ async function handleMessages(sock, messageUpdate) {
             (async () => {
                 try {
                     if (settings.antilink?.enabled && userMessage && /https?:\/\//i.test(userMessage)) {
-                        const { isSenderAdmin } = await checkAdmin(sock, chatId, senderId)
+                        const { isSenderAdmin } = await adminInfoPromise
                         if (!isSenderAdmin) {
                             await sock.sendMessage(chatId, { delete: message.key }).catch(() => {})
                             await sendStyledMessage(sock, chatId, { text: `🚫 @${senderId.split('@')[0]} posted a link!`, mentions: [senderId] }, {}, settings).catch(() => {})
@@ -1318,7 +1330,7 @@ async function handleMessages(sock, messageUpdate) {
                         const txt = userMessage.toLowerCase()
                         const found = badWords.find(w => w && txt.includes(w.toLowerCase()))
                         if (found) {
-                            const { isSenderAdmin } = await checkAdmin(sock, chatId, senderId)
+                            const { isSenderAdmin } = await adminInfoPromise
                             if (!isSenderAdmin) {
                                 await sock.sendMessage(chatId, { delete: message.key }).catch(() => {})
                                 const act = settings.antibadword?.action || 'delete'
@@ -1334,7 +1346,7 @@ async function handleMessages(sock, messageUpdate) {
                 try {
                     const spamming = await DB.checkSpam(chatId, senderId)
                     if (spamming) {
-                        const { isSenderAdmin } = await checkAdmin(sock, chatId, senderId)
+                        const { isSenderAdmin } = await adminInfoPromise
                         if (!isSenderAdmin) {
                             await sock.sendMessage(chatId, { delete: message.key }).catch(() => {})
                             await sendStyledMessage(sock, chatId, { text: `🚫 @${senderId.split('@')[0]} stop spamming!`, mentions: [senderId] }, {}, settings).catch(() => {})
@@ -1350,7 +1362,7 @@ async function handleMessages(sock, messageUpdate) {
             (async () => {
                 try {
                     if (settings.antisticker?.enabled && message.message?.stickerMessage) {
-                        const { isSenderAdmin } = await checkAdmin(sock, chatId, senderId)
+                        const { isSenderAdmin } = await adminInfoPromise
                         if (!isSenderAdmin) {
                             await sock.sendMessage(chatId, { delete: message.key }).catch(() => {})
                             const act = settings.antisticker?.action || 'delete'
@@ -1572,7 +1584,8 @@ const runCmd = () => processCommand(sock, message, cmd, args, fullArgs, chatId, 
 
     try {
         const _cmdLabel = `cmd:${cmd}:${cleanJid(senderId)}`
-        if (process.env.DEBUG_COMMANDS === '1' || process.env.DEBUG_COMMANDS_VERBOSE === '1') {
+        const debugTime = process.env.DEBUG_COMMANDS === '1' || process.env.DEBUG_COMMANDS_VERBOSE === '1'
+        if (debugTime) {
             try { console.log(`[cmd_debug] execution started -> .${cmd} chat=${chatId} sender=${senderId} isHeavy=${isHeavy} isOwner=${isOwner} isMod=${isMod} isAdmin=${isAdmin} isGroup=${isGroup}`) } catch (e) {
                 console.error('[cmd_debug] failed to log execution start:', e?.stack || e)
             }
@@ -1582,12 +1595,12 @@ const runCmd = () => processCommand(sock, message, cmd, args, fullArgs, chatId, 
                 console.log('[cmd] heavy command queue run', { senderId, cmd, runCmdType: typeof runCmd })
             }
             await queue.run(senderId, async () => {
-                console.time(_cmdLabel)
-                try { return await runCmd() } finally { console.timeEnd(_cmdLabel) }
+                if (debugTime) console.time(_cmdLabel)
+                try { return await runCmd() } finally { if (debugTime) console.timeEnd(_cmdLabel) }
             })
         } else {
-            console.time(_cmdLabel)
-            try { await runCmd() } finally { console.timeEnd(_cmdLabel) }
+            if (debugTime) console.time(_cmdLabel)
+            try { await runCmd() } finally { if (debugTime) console.timeEnd(_cmdLabel) }
         }
     } catch (e) {
         console.error(`[cmd] command execution failed for .${cmd}:`, e?.message || e)
