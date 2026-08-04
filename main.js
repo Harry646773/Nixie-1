@@ -112,6 +112,38 @@ function logCmd(jid, cmd) {
 const _bgTasksGlobal = []
 const _bgTasksPerUser = new Map() // userId -> { tasks: [], processing: false }
 
+const _groupMetadataCache = new Map()
+const GROUP_METADATA_TTL = 30_000
+function pruneGroupMetadataCache() {
+    const now = Date.now()
+    for (const [chatId, entry] of _groupMetadataCache) {
+        if (entry.exp <= now) _groupMetadataCache.delete(chatId)
+    }
+}
+setInterval(pruneGroupMetadataCache, GROUP_METADATA_TTL).unref()
+
+async function getGroupMetadata(sock, chatId) {
+    const now = Date.now()
+    const existing = _groupMetadataCache.get(chatId)
+    if (existing) {
+        if (existing.promise) return existing.promise
+        if (existing.exp > now) return existing.meta
+    }
+
+    const promise = sock.groupMetadata(chatId)
+        .then((meta) => {
+            _groupMetadataCache.set(chatId, { meta, exp: Date.now() + GROUP_METADATA_TTL })
+            return meta
+        })
+        .catch((err) => {
+            _groupMetadataCache.delete(chatId)
+            throw err
+        })
+
+    _groupMetadataCache.set(chatId, { promise, exp: now + GROUP_METADATA_TTL })
+    return promise
+}
+
 async function runInBackground(fn, userId = null) {
     return new Promise((resolve, reject) => {
         const taskWrapper = async () => {
@@ -379,7 +411,7 @@ async function getAreJidsSameUser() {
 async function checkAdmin(sock, chatId, senderId) {
     try {
         const fn   = await getAreJidsSameUser()
-        const meta = await sock.groupMetadata(chatId)
+        const meta = await getGroupMetadata(sock, chatId)
         const bot  = cleanJid(sock.user?.id || '')
         const botLid = cleanJid(sock.user?.lid || '')
 
@@ -1489,6 +1521,11 @@ async function handleMessages(sock, messageUpdate) {
         isCommand = cmdBody.length > 0
     }
 
+    const sendCommandAck = async () => {
+        if (!message?.key || message.key?.fromMe) return
+        await sock.sendMessage(chatId, { react: { text: '⚡', key: message.key } }).catch(() => {})
+    }
+
     if (!isCommand) {
         const tttMove = /^[1-9]$/.test(userMessage) || /^(surrender|give up)$/i.test(userMessage)
         if (tttMove) {
@@ -1593,6 +1630,7 @@ async function handleMessages(sock, messageUpdate) {
             return
         }
 
+        sendCommandAck().catch(() => {})
         if (debugTime) console.time(_cmdLabel)
         try { await runCmd() } finally { if (debugTime) console.timeEnd(_cmdLabel) }
     } catch (e) {

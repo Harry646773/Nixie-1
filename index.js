@@ -302,6 +302,36 @@ async function startBotSession(phoneNumber, isReconnect = false) {
             shouldSyncHistoryMessage: () => false,
         })
 
+        const promiseTimeout = (promise, ms, errorMessage = 'Operation timed out') => {
+            return new Promise((resolve, reject) => {
+                const timer = setTimeout(() => reject(new Error(errorMessage)), ms)
+                promise.then((value) => {
+                    clearTimeout(timer)
+                    resolve(value)
+                }).catch((error) => {
+                    clearTimeout(timer)
+                    reject(error)
+                })
+            })
+        }
+
+        const originalSendMessage = sock.sendMessage.bind(sock)
+        sock.sendMessage = async (jid, content, options = {}) => {
+            return promiseTimeout(originalSendMessage(jid, content, options), 20000, 'sendMessage timed out')
+        }
+
+        const originalGroupMetadata = sock.groupMetadata.bind(sock)
+        sock.groupMetadata = async (jid) => {
+            return promiseTimeout(originalGroupMetadata(jid), 15000, 'groupMetadata timed out')
+        }
+
+        if (typeof sock.sendPresenceUpdate === 'function') {
+            const originalSendPresence = sock.sendPresenceUpdate.bind(sock)
+            sock.sendPresenceUpdate = async (...args) => {
+                return promiseTimeout(originalSendPresence(...args), 8000, 'sendPresenceUpdate timed out')
+            }
+        }
+
         activeSessions.set(phoneNumber, { sock })
         sock.ev.on('creds.update', saveCreds)
 
