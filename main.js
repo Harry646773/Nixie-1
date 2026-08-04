@@ -1286,19 +1286,9 @@ async function handleMessages(sock, messageUpdate) {
     const isAdmin = roleInfo.isAdmin
 
     let isSenderAdmin = false
-    if (isGroup && !modePublic) {
+    if (isGroup) {
         const adminInfo = await adminInfoPromise
         isSenderAdmin = adminInfo.isSenderAdmin
-    }
-
-    // Mode: public => respond to everyone. private => respond only to the owner, connected user, or group admin/moderator in that group.
-    const canUseBot = modePublic ? true : (isOwner || isConnected || (isGroup && (isMod || isAdmin || isSenderAdmin)))
-
-    if (!canUseBot) {
-        if (process.env.DEBUG_COMMANDS === '1') {
-            console.log(`[cmd] blocked: modePublic=${modePublic} isConnected=${isConnected} isOwner=${isOwner} isMod=${isMod} isSenderAdmin=${isSenderAdmin} botState=${settings.botState?.isOn}`)
-        }
-        return
     }
 
     // ── Initialize command flag early (before any async tasks) ──────────────────────
@@ -1502,7 +1492,6 @@ async function handleMessages(sock, messageUpdate) {
     if (!isCommand) {
         const tttMove = /^[1-9]$/.test(userMessage) || /^(surrender|give up)$/i.test(userMessage)
         if (tttMove) {
-            if (!modePublic && !isConnected && !isOwner && !isMod && !isAdmin && !isSenderAdmin) return
             await handleTicTacToeMove(sock, chatId, senderId, userMessage)
             return
         }
@@ -1564,8 +1553,7 @@ async function handleMessages(sock, messageUpdate) {
     }
 
     // ── Mode check ────────────────────────────────────────────
-    // In PUBLIC mode the bot responds to everyone. In PRIVATE mode it responds to the owner, connected user, group admins, or group moderators.
-    if (!modePublic && !isOwner && !isConnected && !isMod && !isAdmin && !isSenderAdmin) return
+    // All parsed commands are now allowed in DMs and groups when the bot is active.
 
     // ── Ban check (skip if owner) ─────────────────────────────
     if (settings.banned.includes(senderId) && cmd !== 'unban' && !isOwner) {
