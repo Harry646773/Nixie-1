@@ -1118,8 +1118,9 @@ function detectSmartCommand(text, mode) {
 
 function isPrefixCommand(text, prefix) {
     if (typeof prefix !== 'string') return false
-    if (prefix === '') return text.trim().length > 0
-    return text.startsWith(prefix)
+    const normalized = String(text || '').trim()
+    if (prefix === '') return normalized.length > 0
+    return normalized.startsWith(prefix)
 }
 
 // ── Message deduplication (prevent duplicate event processing) ─────────────
@@ -1325,6 +1326,20 @@ async function handleMessages(sock, messageUpdate) {
 
     // ── Initialize command flag early (before any async tasks) ──────────────────────
     let isCommand = false
+    const userPrefix = typeof settings.userPrefix === 'string' ? settings.userPrefix : (PREFIXES[0] || '.')
+    const userMode = normalizeUserMode(settings.userMode)
+    const isCommandPrefix = isPrefixCommand(rawText, userPrefix)
+
+    let commandContext = null
+    if (isCommandPrefix) {
+        const trimmedText = rawText.trim()
+        const cmdBody = userPrefix === '' ? trimmedText : trimmedText.slice(userPrefix.length).trim()
+        const cmdName = cmdBody.split(' ')[0].toLowerCase()
+        const args = cmdBody.split(' ').slice(1)
+        const fullArgs = cmdBody.slice(cmdName.length).trim()
+        commandContext = { type: 'prefix', cmd: cmdName, args, fullArgs }
+        isCommand = cmdBody.length > 0
+    }
 
     // Run anti checks in background (non-blocking, per-user)
     runInBackground(async () => {
@@ -1454,7 +1469,7 @@ async function handleMessages(sock, messageUpdate) {
     }, senderId).catch(() => {})
 
     // ── PM blocker (non-blocking) ──────────────────────────────  
-    if (!isGroup && !message.key.fromMe) {  
+    if (!isGroup && !message.key.fromMe && !isCommand) {  
         if (settings.pmBlocker?.enabled) {  
             runInBackground(() => 
                 sendStyledMessage(sock, chatId, settings.pmBlocker.message || '🚫 PMs are disabled.', { quoted: message }, settings).catch(() => {}), senderId
@@ -1498,27 +1513,12 @@ async function handleMessages(sock, messageUpdate) {
         runInBackground(() => handleAntiBot(sock, messageUpdate, chatId, senderId), senderId).catch(() => {})
     }
 
-    const userPrefix = typeof settings.userPrefix === 'string' ? settings.userPrefix : (PREFIXES[0] || '.')
-    const userMode = normalizeUserMode(settings.userMode)
-    const isCommandPrefix = isPrefixCommand(rawText, userPrefix)
-
     if (process.env.DEBUG_COMMANDS === '1' || process.env.DEBUG_COMMANDS_VERBOSE === '1') {
         try {
             console.log(`[cmd_debug] prefix check -> chat=${chatId} sender=${senderId} prefix=${JSON.stringify(userPrefix)} isCommandPrefix=${isCommandPrefix} rawText=${JSON.stringify(rawText)}`)
         } catch (e) {
             console.error('[cmd_debug] failed to log prefix check:', e?.stack || e)
         }
-    }
-
-    let commandContext = null
-
-    if (isCommandPrefix) {
-        const cmdBody = userPrefix === '' ? rawText.trim() : rawText.slice(userPrefix.length).trim()
-        const cmdName = cmdBody.split(' ')[0].toLowerCase()
-        const args = cmdBody.split(' ').slice(1)
-        const fullArgs = cmdBody.slice(cmdName.length).trim()
-        commandContext = { type: 'prefix', cmd: cmdName, args, fullArgs }
-        isCommand = cmdBody.length > 0
     }
 
     const sendCommandAck = async () => {
