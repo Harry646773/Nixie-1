@@ -1,0 +1,40 @@
+# fly.toml app configuration file generated for nixie-bot on 2026-05-10T15:45:32Z
+#
+# See https://fly.io/docs/reference/configuration/ for information about how to use this file.
+#
+
+app = 'nixie-bot-harry'
+primary_region = 'jnb'
+
+kill_signal = "SIGINT"
+kill_timeout = 5
+
+[processes]
+  app = "node index.js"
+
+[build]
+
+[env]
+  LANG = "en_US.UTF-8"
+  LC_ALL = "en_US.UTF-8"
+  TZ = "Africa/Lagos"
+  NODE_ENV = "production"
+  MONGO_URI = "mongodb+srv://Nixie:NrC7o4hcEvhlpMIc@nixie.teydhjb.mongodb.net/?appName=NIXIE"
+
+  [experimental]
+  auto_rollback = true
+
+[http_service]
+auto_start_machines = true
+auto_stop_machines = false
+internal_port = 8080
+min_machines_running = 1
+processes = [ "app" ]
+
+
+[[vm]]
+  size = "performance-1x"
+  memory = '5GB'
+  cpu_kind = 'shared'
+  cpus = 1
+  memory_mb = 1024

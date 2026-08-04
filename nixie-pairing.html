@@ -1,0 +1,260 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Nixie Bot - Pairing</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: sans-serif;
+      background: radial-gradient(circle at top, #0f172a, #020617);
+      color: #fff;
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 20px;
+    }
+
+    /* CARD ANIMATION */
+    .card {
+      background: rgba(20,20,20,0.8);
+      backdrop-filter: blur(12px);
+      border-radius: 18px;
+      padding: 30px;
+      max-width: 480px;
+      width: 100%;
+      box-shadow: 0 0 40px rgba(37,211,102,0.15);
+      text-align: center;
+      animation: fadeIn 1s ease;
+    }
+
+    @keyframes fadeIn {
+      from { opacity: 0; transform: translateY(30px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+
+    /* LOGO FLOAT */
+    img.logo {
+      width: 120px;
+      margin-bottom: 15px;
+      border-radius: 12px;
+      animation: float 3s ease-in-out infinite;
+    }
+
+    @keyframes float {
+      0%,100% { transform: translateY(0); }
+      50% { transform: translateY(-10px); }
+    }
+
+    h1 {
+      color: #25D366;
+      font-size: 28px;
+      margin-bottom: 5px;
+      text-shadow: 0 0 10px #25D366;
+    }
+
+    p.subtitle {
+      color: #aaa;
+      margin-bottom: 20px;
+      font-size: 14px;
+    }
+
+    /* COMMUNITY BOX */
+    .community {
+      background: #0b0b0b;
+      padding: 15px;
+      border-radius: 12px;
+      margin-bottom: 20px;
+      border: 1px solid #222;
+    }
+
+    .community p {
+      font-size: 13px;
+      color: #bbb;
+      margin-bottom: 10px;
+    }
+
+    /* BUTTON GLOW */
+    .community a, button {
+      display: block;
+      text-decoration: none;
+      background: #25D366;
+      color: #000;
+      padding: 12px;
+      border-radius: 10px;
+      margin-bottom: 10px;
+      font-weight: bold;
+      transition: all 0.3s ease;
+    }
+
+    .community a:hover, button:hover {
+      transform: scale(1.05);
+      box-shadow: 0 0 20px #25D366;
+    }
+
+    button:disabled {
+      background: #333;
+      color: #666;
+      box-shadow: none;
+      transform: none;
+    }
+
+    input[type=text] {
+      width: 100%;
+      padding: 12px;
+      border-radius: 10px;
+      border: 1px solid #222;
+      background: #050505;
+      color: #fff;
+      font-size: 16px;
+      margin-bottom: 12px;
+      transition: 0.3s;
+    }
+
+    input:focus {
+      outline: none;
+      border-color: #25D366;
+      box-shadow: 0 0 10px #25D366;
+    }
+
+    #result {
+      font-size: 32px;
+      font-weight: bold;
+      color: #25D366;
+      margin-top: 15px;
+      letter-spacing: 4px;
+      animation: glow 1.5s infinite alternate;
+    }
+
+    @keyframes glow {
+      from { text-shadow: 0 0 5px #25D366; }
+      to { text-shadow: 0 0 20px #25D366; }
+    }
+
+    #error {
+      color: #ff4444;
+      margin-top: 10px;
+      font-size: 14px;
+    }
+
+    #status {
+      color: #aaa;
+      margin-top: 10px;
+      font-size: 14px;
+      animation: pulse 1.2s infinite;
+    }
+
+    @keyframes pulse {
+      0% { opacity: 0.5; }
+      50% { opacity: 1; }
+      100% { opacity: 0.5; }
+    }
+
+    .check {
+      margin-top: 10px;
+      font-size: 13px;
+      color: #bbb;
+    }
+  </style>
+</head>
+
+<body>
+
+<div class="card">
+
+  <img src="logo.png" class="logo">
+
+  <h1>🤖 Nixie Bot</h1>
+  <p class="subtitle">Connect your WhatsApp number to the bot</p>
+
+  <div class="community">
+    <p>⚡ Join before connecting</p>
+
+    <a href="https://whatsapp.com/channel/0029VbCJtUU72WTvhawSKv3P" target="_blank">
+      📢 WhatsApp Channel
+    </a>
+
+    <a href="https://chat.whatsapp.com/LCTGQOWbsQzKYYfDUT2X5V?mode=gi_t" target="_blank">
+      👥 WhatsApp Group
+    </a>
+
+    <div class="check">
+      <input type="checkbox" id="joined"> I have joined both
+    </div>
+  </div>
+
+  <input type="text" id="number" placeholder="12348012345678 DO NOT ADD + !" />
+  <button id="pairBtn" onclick="getCode()">Get Pairing Code</button>
+
+  <p id="status"></p>
+  <p id="result"></p>
+  <p id="error"></p>
+
+</div>
+
+<script>
+async function getCode() {
+  const num = document.getElementById('number').value.trim()
+  const joined = document.getElementById('joined').checked
+
+  if (!joined) {
+    document.getElementById('error').innerText =
+      '⚠️ Join channel & group first!'
+    return
+  }
+
+  if (!num) {
+    document.getElementById('error').innerText =
+      'Enter your number!'
+    return
+  }
+
+  document.getElementById('result').innerText = ''
+  document.getElementById('error').innerText = ''
+  document.getElementById('status').innerText = '⏳ Connecting...'
+  document.getElementById('pairBtn').disabled = true
+
+  try {
+    await fetch('/pair?number=' + num)
+
+    let attempts = 0
+
+    const poll = setInterval(async () => {
+      attempts++
+      document.getElementById('status').innerText =
+        '⏳ Getting code... (' + attempts + '/30)'
+
+      try {
+        const res = await fetch('/code?number=' + num)
+        const data = await res.json()
+
+        if (data.code) {
+          clearInterval(poll)
+          document.getElementById('result').innerText = '🔑 ' + data.code
+          document.getElementById('status').innerText =
+            'Go to WhatsApp → Linked Devices'
+          document.getElementById('pairBtn').disabled = false
+        } else if (attempts >= 30) {
+          clearInterval(poll)
+          document.getElementById('error').innerText =
+            'Timeout. Try again.'
+          document.getElementById('status').innerText = ''
+          document.getElementById('pairBtn').disabled = false
+        }
+
+      } catch(e) {}
+
+    }, 2000)
+
+  } catch (e) {
+    document.getElementById('error').innerText = 'Error: ' + e.message
+    document.getElementById('pairBtn').disabled = false
+  }
+}
+</script>
+
+</body>
+</html>
