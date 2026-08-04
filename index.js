@@ -474,7 +474,6 @@ async function startBotSession(phoneNumber, isReconnect = false) {
                     return
                 }
                 
-                if (!mek.key.fromMe && mek.key.id.startsWith('BAE5') && mek.key.id.length === 16) return
                 await handleMessages(sock, chatUpdate, true)
             } catch (e) {
                 if (process.env.DEBUG_SESSIONS === '1') console.error(`[Session:${phoneNumber}] error:`, e.message)

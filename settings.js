@@ -2,6 +2,7 @@ module.exports = {
     ownerNumber: process.env.OWNER_NUMBER || '2349051579932 2349139962616',
     botName: 'NIXIE BOT NXI',
     prefix: '.',
+    animatedResponses: true,
     packname: 'Nixie',
     author: 'Harry Potter',
     storeWriteInterval: 10000,

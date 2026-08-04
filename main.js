@@ -31,7 +31,7 @@ const aiCommand = require('./lib/aiCommand')
 const imagineCommand = require('./lib/imagineCommand')
 
 // ── Security system (HackerGuard) ───────────────────────────
-const { handleAntiBot, handleAntiSticker, handleAntiBadword, handleAntiGroupStatus, toggleFeature, storeMessageForGuard } = require('./lib/hackerGuard')
+const { handleAntiBot, handleAntiSticker, handleAntiBadword, handleAntiGroupStatus, handleAction, toggleFeature, storeMessageForGuard } = require('./lib/hackerGuard')
 const { antistatusCommand, checkStatusForViolations, checkMessageForViolations } = require('./lib/antiStatus')
 
 // ── Media Engine (Pro Max) ───────────────────────────────────
@@ -245,11 +245,9 @@ async function sendAnimatedText(sock, chatId, frames, quoted = null, delayMs = 3
     if (!Array.isArray(frames) || frames.length === 0) return null
     const formattedFrames = frames.map(frame => formatPresentationText(frame, settings))
     const animMsg = await animateMessage(sock, chatId, formattedFrames, delayMs, quoted)
-    if (!animMsg) {
-        const fallbackText = formattedFrames[formattedFrames.length - 1]
-        await sendStyledMessage(sock, chatId, { text: fallbackText }, quoted ? { quoted } : {}, settings).catch(() => {})
-    }
-    return animMsg
+    const finalText = typeof animMsg === 'string' && animMsg.trim() ? animMsg : formattedFrames[formattedFrames.length - 1]
+    await sendStyledMessage(sock, chatId, { text: finalText }, quoted ? { quoted } : {}, settings).catch(() => {})
+    return finalText
 }
 
 async function lookupLocation(query) {
@@ -417,18 +415,31 @@ setInterval(() => {
 }, 60_000).unref()
 
 // ── Temp folder cleaner ───────────────────────────────────────
-const getTmpSizeMB = dir => {
+async function getTmpSizeMB(dir) {
     try {
-        return fs.readdirSync(dir).reduce((acc, f) => {
-            try { return acc + fs.statSync(path.join(dir, f)).size } catch { return acc }
-        }, 0) / 1_048_576
-    } catch { return 0 }
-}
-setInterval(() => {
-    if (getTmpSizeMB(TEMP_MEDIA_DIR) > 200) {
-        try { fs.readdirSync(TEMP_MEDIA_DIR).forEach(f => { try { fs.unlinkSync(path.join(TEMP_MEDIA_DIR, f)) } catch {} }) }
-        catch {}
+        const files = await fs.promises.readdir(dir)
+        const sizes = await Promise.all(files.map(async (f) => {
+            try {
+                const stat = await fs.promises.stat(path.join(dir, f))
+                return stat.size
+            } catch {
+                return 0
+            }
+        }))
+        return sizes.reduce((acc, size) => acc + size, 0) / 1_048_576
+    } catch {
+        return 0
     }
+}
+setInterval(async () => {
+    try {
+        if (await getTmpSizeMB(TEMP_MEDIA_DIR) > 200) {
+            const files = await fs.promises.readdir(TEMP_MEDIA_DIR)
+            await Promise.all(files.map(async (f) => {
+                try { await fs.promises.unlink(path.join(TEMP_MEDIA_DIR, f)) } catch {}
+            }))
+        }
+    } catch {}
 }, 60_000).unref()
 
 // ── Message store for antidelete ─────────────────────────────
@@ -1170,7 +1181,7 @@ async function handleMessages(sock, messageUpdate) {
         senderNum === botJidClean ||  
         senderNum === botLidClean  
 
-    const botNum = botJidClean || 'default'  
+    const botNum = botJidClean || botLidClean || 'default'  
 
     // ═══════════════════════════════════════════════════════════  
     // ★ BATCH LOAD ALL SETTINGS IN ONE CALL ★
@@ -1207,7 +1218,8 @@ async function handleMessages(sock, messageUpdate) {
     }
 
     const ownerNumberClean = cleanJid(settings.ownerNumber).split('@')[0]
-    const isOwner = isConnected || settings.owners.some(o => cleanJid(o).split('@')[0] === senderNum) || ownerNumberClean === senderNum
+    const ownerNumbers = Array.isArray(settings.owners) ? settings.owners : [settings.owners].filter(Boolean)
+    const isOwner = isConnected || ownerNumbers.some(o => cleanJid(o).split('@')[0] === senderNum) || ownerNumberClean === senderNum
 
     // ── AUTO-ADD NEW PRIVATE CONTACTS ─────────────────────
     try {
@@ -1739,7 +1751,7 @@ async function processCommand(sock, message, cmd, args, fullArgs, chatId, sender
 ╚═══════════════════════════════════════════════╝`
 
             if (settings.animatedResponses) {
-                await animateMessage(sock, chatId, [...frames, result].map(frame => formatPresentationText(frame, settings)), 300, message)
+                await sendAnimatedText(sock, chatId, [...frames, result], message, 300, settings)
             } else {
                 await sendStyledMessage(sock, chatId, { text: result }, { quoted: message }, settings)
             }
@@ -1764,7 +1776,7 @@ async function processCommand(sock, message, cmd, args, fullArgs, chatId, sender
                 `╔═════════════════════════╗\n║   𝙽𝙸𝚇𝙸𝙴 𝙰𝙻𝙸𝚅𝙴   ║\n╚═════════════════════════╝\n\n🤖 Bot: ${settings.botName || 'NIXIE'}\n🟢 Status: Active`
             ]
             if (settings.animatedResponses) {
-                await animateMessage(sock, chatId, frames.map(frame => formatPresentationText(frame, settings)), 300, message)
+                await sendAnimatedText(sock, chatId, frames, message, 300, settings)
             } else {
                 await sendStyledMessage(sock, chatId, { text: frames[frames.length - 1] }, { quoted: message }, settings)
             }
@@ -1820,7 +1832,7 @@ async function processCommand(sock, message, cmd, args, fullArgs, chatId, sender
             ]
             
             if (settings.animatedResponses) {
-                await animateMessage(sock, chatId, frames.map(frame => formatPresentationText(frame, settings)), 300, message)
+                await sendAnimatedText(sock, chatId, frames, message, 300, settings)
             } else {
                 await sendStyledMessage(sock, chatId, { text: frames[frames.length - 1] }, { quoted: message }, settings)
             }
@@ -2148,7 +2160,7 @@ async function processCommand(sock, message, cmd, args, fullArgs, chatId, sender
                     imgRes = await sendStyledMessage(sock, chatId, { image: { url: pick }, caption: imageCaption }, { quoted: message }, settings)
                 } else {
                     const imgPath = require('path').resolve(pick)
-                    const imgBuf = fs.readFileSync(imgPath)
+                    const imgBuf = await fs.promises.readFile(imgPath)
                     imgRes = await sendStyledMessage(sock, chatId, { image: imgBuf, caption: imageCaption }, { quoted: message }, settings)
                 }
                 if (imgRes && imgRes.key && imgRes.key.id) imageSent = true
@@ -2158,6 +2170,9 @@ async function processCommand(sock, message, cmd, args, fullArgs, chatId, sender
 
                 if (settings.animatedResponses) {
                     await animateMessage(sock, chatId, frames.map(frame => formatPresentationText(frame, settings)), 200, message)
+                    if (!imageSent) {
+                        await sendStyledMessage(sock, chatId, menuText, { quoted: message }, settings)
+                    }
                 } else {
                     // If we already sent the image and used the full menu text as its caption, avoid sending the text again
                     if (!(imageSent && imageCaption === menuText)) {
@@ -2252,7 +2267,7 @@ ${components.length ? `\n⚠️ Unhealthy component(s): ${components.join(', ')}
             ]
 
             if (settings.animatedResponses) {
-                await animateMessage(sock, chatId, frames.map(frame => formatPresentationText(frame, settings)), 300, message)
+                await sendAnimatedText(sock, chatId, frames, message, 300, settings)
             } else {
                 await sendStyledMessage(sock, chatId, { text: frames[frames.length - 1] }, { quoted: message }, settings)
             }
@@ -2913,11 +2928,10 @@ ${components.length ? `\n⚠️ Unhealthy component(s): ${components.join(', ')}
 
         try {
             const path = require('path')
-            const fs = require('fs')
             // Save images per connected bot account (botNum) so each bot keeps its own menu images
             const uidSafe = (botNum || 'default').replace(/[^a-zA-Z0-9_-]/g, '_')
             const saveDir = path.resolve(`./assets/menu_images/${uidSafe}`)
-            if (!fs.existsSync(saveDir)) fs.mkdirSync(saveDir, { recursive: true })
+            await fs.promises.mkdir(saveDir, { recursive: true })
 
             const saved = []
             let idx = 1
@@ -2926,7 +2940,7 @@ ${components.length ? `\n⚠️ Unhealthy component(s): ${components.join(', ')}
                 let buf = Buffer.alloc(0)
                 for await (const c of stream) buf = Buffer.concat([buf, c])
                 const out = path.join(saveDir, `${idx}.jpg`)
-                fs.writeFileSync(out, buf)
+                await fs.promises.writeFile(out, buf)
                 saved.push(out)
                 idx++
             }
@@ -3635,9 +3649,9 @@ ${components.length ? `\n⚠️ Unhealthy component(s): ${components.join(', ')}
                     const gTTS = require('gtts')
                     const tmpFile = path.join(TEMP_MEDIA_DIR, `tts-${Date.now()}.mp3`)
                     await new Promise((res, rej) => new gTTS(text, 'en').save(tmpFile, e => e ? rej(e) : res()))
-                    audioBuffer = fs.readFileSync(tmpFile)
+                    audioBuffer = await fs.promises.readFile(tmpFile)
                     workingMimetype = 'audio/mpeg'
-                    fs.unlinkSync(tmpFile)
+                    await fs.promises.unlink(tmpFile)
                 } catch (e) {
                     console.error('[tts] gtts failed:', e.message)
                 }
