@@ -145,23 +145,8 @@ try {
 
 const settings = require('./settings')
 
-// Set API keys here for testing (remove this section after setup)
-// WARNING: Replace these with your own API keys from .env file
-if (!process.env.OPENAI_API_KEY) {
-    console.warn('⚠️ OPENAI_API_KEY not set in environment variables')
-}
-if (!process.env.GEMINI_API_KEY) {
-    console.warn('⚠️ GEMINI_API_KEY not set in environment variables')
-}
-if (!process.env.GROQ_API_KEY) {
-    console.warn('⚠️ GROQ_API_KEY not set in environment variables')
-}
-if (!process.env.OPENROUTER_API_KEY) {
-    console.warn('⚠️ OPENROUTER_API_KEY not set in environment variables')
-}
-if (!process.env.TOGETHER_API_KEY) {
-    console.warn('⚠️ TOGETHER_API_KEY not set in environment variables')
-}
+// Optional AI keys are not required for pairing/session startup.
+// Avoid noisy warnings during normal boot.
 
 // ── DATA DIR SETUP ───────────────────────────────────────────
 const dataDir = path.join(__dirname, 'data')
@@ -215,15 +200,11 @@ const activeSessions = new Map()
 const pairingLocks = new Set()
 const connectionLog = new Set() // Track logged connections to prevent spam
 
-// Periodic connection status summary
-setInterval(() => {
-    const activeCount = activeSessions.size
-    if (activeCount > 0) {
-        const phoneNumbers = Array.from(activeSessions.keys()).slice(0, 3)
-        const more = activeCount > 3 ? ` +${activeCount - 3} more` : ''
-        console.log(chalk.blue(`📊 Active Sessions: ${activeCount} | ${phoneNumbers.join(', ')}${more}`))
-    }
-}, 30000) // Show summary every 30 seconds
+function logActiveUsersSummary() {
+    console.log(chalk.blue(`Active Users: ${activeSessions.size}`))
+}
+
+logActiveUsersSummary()
 
 /** When true, host is stopping — do not wipe Mongo session on connection close. */
 let shuttingDown = false
@@ -379,6 +360,7 @@ async function startBotSession(phoneNumber, isReconnect = false) {
                 pairingLocks.delete(phoneNumber)
                 activeSessions.set(myPhoneNumber, { sock })
                 if (myPhoneNumber !== phoneNumber) activeSessions.set(phoneNumber, { sock })
+                logActiveUsersSummary()
 
                 // Save owner number + LID
                 try {
@@ -410,6 +392,7 @@ async function startBotSession(phoneNumber, isReconnect = false) {
                 pairingLocks.delete(phoneNumber)
                 activeSessions.delete(phoneNumber)
                 if (myPhoneNumber && myPhoneNumber !== phoneNumber) activeSessions.delete(myPhoneNumber)
+                logActiveUsersSummary()
 
                 // Deploy / sleep / SIGTERM: never delete Mongo session
                 if (shuttingDown) {
