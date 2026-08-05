@@ -1,6 +1,4 @@
-const settings = require('./settings')
-
-const PREFIXES = [settings.prefix]
+const PREFIXES = ['.']
 
 module.exports = {
     PREFIXES
